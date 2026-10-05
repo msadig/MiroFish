@@ -1119,6 +1119,12 @@ class ReportAgent:
         return tool_calls
 
     @staticmethod
+    def _with_language_reminder(messages: List[Dict[str, str]]) -> List[Dict[str, str]]:
+        """ReAct 轮次的提示词是中文的，模型会跟随最近一轮的语言；在最后一条消息后重申输出语言（不修改历史）"""
+        last = messages[-1]
+        return messages[:-1] + [{**last, "content": f"{last['content']}\n\n{get_language_instruction()}"}]
+
+    @staticmethod
     def _strip_tool_call_fragments(text: str) -> str:
         """移除正文中的 <tool_call> 块（含未闭合的残片），返回剩余正文"""
         return re.sub(r'<tool_call>.*?(?:</tool_call>|$)', '', text, flags=re.DOTALL).strip()
@@ -1348,7 +1354,7 @@ class ReportAgent:
             
             # 调用LLM
             response = self.llm.chat(
-                messages=messages,
+                messages=self._with_language_reminder(messages),
                 temperature=0.5,
                 max_tokens=4096
             )
@@ -1539,7 +1545,7 @@ class ReportAgent:
             # 直接将这段内容作为最终答案，不再空转（但绝不把残缺的工具调用当正文）
             final_answer = self._strip_tool_call_fragments(cleaned_response)
             if not final_answer:
-                messages.append({"role": "user", "content": f"{REACT_FORCE_FINAL_MSG}\n\n{get_language_instruction()}"})
+                messages.append({"role": "user", "content": REACT_FORCE_FINAL_MSG})
                 continue
             logger.info(t('report.sectionNoPrefix', title=section.title, count=tool_calls_count))
 
@@ -1554,10 +1560,10 @@ class ReportAgent:
         
         # 达到最大迭代次数，强制生成内容
         logger.warning(t('report.sectionMaxIter', title=section.title))
-        messages.append({"role": "user", "content": f"{REACT_FORCE_FINAL_MSG}\n\n{get_language_instruction()}"})
+        messages.append({"role": "user", "content": REACT_FORCE_FINAL_MSG})
         
         response = self.llm.chat(
-            messages=messages,
+            messages=self._with_language_reminder(messages),
             temperature=0.5,
             max_tokens=4096
         )

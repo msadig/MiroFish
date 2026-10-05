@@ -37,3 +37,13 @@ def test_get_locale_normalises_accept_language(header, expected):
     headers = {"Accept-Language": header} if header else {}
     with Flask(__name__).test_request_context(headers=headers):
         assert get_locale() == expected
+
+
+def test_language_reminder_appends_to_last_turn_without_mutating_history():
+    from app.utils.locale import set_locale
+
+    set_locale("en")
+    history = [{"role": "system", "content": "sys"}, {"role": "user", "content": "观察结果"}]
+    out = ReportAgent._with_language_reminder(history)
+    assert out[-1]["content"].endswith("Please respond in English.")
+    assert history[-1]["content"] == "观察结果"
