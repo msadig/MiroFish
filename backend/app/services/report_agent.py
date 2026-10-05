@@ -1081,7 +1081,8 @@ class ReportAgent:
         tool_calls = []
 
         # 格式1: XML风格（标准格式）
-        xml_pattern = r'<tool_call>\s*(\{.*?\})\s*</tool_call>'
+        # 闭合标签可缺失：模型可能在 "</" 处截断（如 Gemini），仍需识别为工具调用
+        xml_pattern = r'<tool_call>\s*(\{.*?\})\s*(?:</tool_call>|<[/a-z_]*\s*$|$)'
         for match in re.finditer(xml_pattern, response, re.DOTALL):
             try:
                 call_data = json.loads(match.group(1))
@@ -1116,6 +1117,11 @@ class ReportAgent:
                 pass
 
         return tool_calls
+
+    @staticmethod
+    def _strip_tool_call_fragments(text: str) -> str:
+        """移除正文中的 <tool_call> 块（含未闭合的残片），返回剩余正文"""
+        return re.sub(r'<tool_call>.*?(?:</tool_call>|$)', '', text, flags=re.DOTALL).strip()
 
     def _is_valid_tool_call(self, data: dict) -> bool:
         """校验解析出的 JSON 是否是合法的工具调用"""
@@ -1530,9 +1536,12 @@ class ReportAgent:
                 continue
 
             # 工具调用已足够，LLM 输出了内容但没带 "Final Answer:" 前缀
-            # 直接将这段内容作为最终答案，不再空转
+            # 直接将这段内容作为最终答案，不再空转（但绝不把残缺的工具调用当正文）
+            final_answer = self._strip_tool_call_fragments(cleaned_response)
+            if not final_answer:
+                messages.append({"role": "user", "content": REACT_FORCE_FINAL_MSG})
+                continue
             logger.info(t('report.sectionNoPrefix', title=section.title, count=tool_calls_count))
-            final_answer = cleaned_response
 
             if self.report_logger:
                 self.report_logger.log_section_content(
@@ -1560,7 +1569,7 @@ class ReportAgent:
         elif "Final Answer:" in response:
             final_answer = response.split("Final Answer:")[-1].strip()
         else:
-            final_answer = response
+            final_answer = self._strip_tool_call_fragments(response) or t('report.sectionGenFailedContent')
         
         # 记录章节内容生成完成日志
         if self.report_logger:
