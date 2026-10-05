@@ -1539,7 +1539,7 @@ class ReportAgent:
             # 直接将这段内容作为最终答案，不再空转（但绝不把残缺的工具调用当正文）
             final_answer = self._strip_tool_call_fragments(cleaned_response)
             if not final_answer:
-                messages.append({"role": "user", "content": REACT_FORCE_FINAL_MSG})
+                messages.append({"role": "user", "content": f"{REACT_FORCE_FINAL_MSG}\n\n{get_language_instruction()}"})
                 continue
             logger.info(t('report.sectionNoPrefix', title=section.title, count=tool_calls_count))
 
@@ -1554,7 +1554,7 @@ class ReportAgent:
         
         # 达到最大迭代次数，强制生成内容
         logger.warning(t('report.sectionMaxIter', title=section.title))
-        messages.append({"role": "user", "content": REACT_FORCE_FINAL_MSG})
+        messages.append({"role": "user", "content": f"{REACT_FORCE_FINAL_MSG}\n\n{get_language_instruction()}"})
         
         response = self.llm.chat(
             messages=messages,
