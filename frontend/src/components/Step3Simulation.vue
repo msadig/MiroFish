@@ -688,11 +688,27 @@ watch(() => props.systemLogs?.length, () => {
   })
 })
 
-onMounted(() => {
+onMounted(async () => {
   addLog(t('log.step3Init'))
-  if (props.simulationId) {
-    doStartSimulation()
+  if (!props.simulationId) return
+  // fork: opening or refreshing this page must not restart (and wipe) a run that already exists.
+  // Start only a simulation that has never run; otherwise attach to its status (upstream #757).
+  try {
+    const res = await getRunStatus(props.simulationId)
+    const status = res.success && res.data ? res.data.runner_status : null
+    if (status && status !== 'idle') {
+      runStatus.value = res.data
+      phase.value = 1
+      startStatusPolling()
+      startDetailPolling()
+      return
+    }
+  } catch (err) {
+    // status unknown: don't risk a restart
+    addLog(t('log.startException', { error: err.message }))
+    return
   }
+  doStartSimulation()
 })
 
 onUnmounted(() => {
